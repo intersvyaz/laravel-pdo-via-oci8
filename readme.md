@@ -1,5 +1,23 @@
 # PDO Userspace Driver for Oracle (oci8)
 
+### Is a fork of [yajra/laravel-pdo-via-oci8](https://github.com/yajra/laravel-pdo-via-oci8)
+Optimized and tested for Yii.
+
+Changes:
+- Default behavior $dsn parameter on Oci8::__construct.
+
+Correct $dsn value: ```oci:dbname=DB_NAME;charser=AL32UTF8``` not: ```DB_NAME```.
+- Separate blob and clob.
+
+Use ```Oci8::PARAM_BLOB``` and ```Oci8::PARAM_CLOB``` constant in bindValue.
+- Automatic save blob fields.
+
+```php
+Yii::app()->db->createCommand("INSERT INTO table (data) VALUES (empty_blob()) returning data into :data")
+->bindParam(':data', 'very very long string', Oci8::PARAM_BLOB)
+->execute();
+```
+
 ###PDO via Oci8
 
 [![Latest Stable Version](https://poser.pugx.org/yajra/laravel-pdo-via-oci8/v/stable.png)](https://packagist.org/packages/yajra/laravel-pdo-via-oci8) [![Total Downloads](https://poser.pugx.org/yajra/laravel-pdo-via-oci8/downloads.png)](https://packagist.org/packages/yajra/laravel-pdo-via-oci8) [![Build Status](https://travis-ci.org/yajra/laravel-pdo-via-oci8.png)](https://travis-ci.org/yajra/laravel-pdo-via-oci8)

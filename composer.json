@@ -1,11 +1,15 @@
 {
-    "name": "yajra/laravel-pdo-via-oci8",
+    "name": "intersvyaz/pdo-oci8",
     "description": "PDO userspace driver proxying calls to PHP OCI8 driver",
     "license": "MIT",
     "authors": [
         {
             "name": "yajra - Arjay Angeles",
             "email": "aqangeles@gmail.com"
+        },
+        {
+            "name": "kikimor",
+            "email": "i@kikimor.ru"
         }
     ],
     "require-dev": {

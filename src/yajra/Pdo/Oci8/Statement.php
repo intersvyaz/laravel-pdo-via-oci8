@@ -2,6 +2,7 @@
 
 use PDO;
 use PDOStatement;
+use OCI_Lob;
 use yajra\Pdo\Oci8;
 use yajra\Pdo\Oci8\Exceptions\Oci8Exception;
 
@@ -91,6 +92,20 @@ class Statement extends PDOStatement {
 	protected $_fetchIntoObject = null;
 
 	/**
+	 * Array of lob objects, which binded in bindParam.
+	 *
+	 * @var OCI_Lob[]
+	 */
+	protected $_lobs = array();
+
+	/**
+	 * Array of param value, which binded in bindParam as lob.
+	 *
+	 * @var array
+	 */
+	protected $_lobsValue = array();
+
+	/**
 	 * Constructor
 	 *
 	 * @param resource $sth Statement handle created with oci_parse()
@@ -124,7 +139,7 @@ class Statement extends PDOStatement {
 	public function execute($inputParams = null)
 	{
 		$mode = OCI_COMMIT_ON_SUCCESS;
-		if ($this->_pdoOci8->inTransaction())
+		if ($this->_pdoOci8->inTransaction() || count($this->_lobs) > 0)
 		{
 			$mode = OCI_DEFAULT;
 		}
@@ -139,18 +154,22 @@ class Statement extends PDOStatement {
 		}
 
 		$result = @oci_execute($this->_sth, $mode);
+
+		if ($result) {
+			foreach ($this->_lobs as $lobName => $lob) {
+				$lob->save($this->_lobsValue[$lobName]);
+			}
+		}
+
 		if ($result != true)
 		{
 			$e = oci_error($this->_sth);
+			throw new Oci8Exception($e['message'], $e['code']);
+		}
 
-			$message = '';
-			$message = $message . 'Error Code    : ' . $e['code'] . PHP_EOL;
-			$message = $message . 'Error Message : ' . $e['message'] . PHP_EOL;
-			$message = $message . 'Position      : ' . $e['offset'] . PHP_EOL;
-			$message = $message . 'Statement     : ' . $e['sqltext'] . PHP_EOL;
-			$message = $message . 'Bindings      : [' . implode(',', (array) $inputParams) . ']' . PHP_EOL;
-
-			throw new Oci8Exception($message, $e['code']);
+		if (!$this->_pdoOci8->inTransaction() && count($this->_lobs) > 0)
+		{
+			return oci_commit($this->_pdoOci8->_dbh);
 		}
 
 		return $result;
@@ -398,6 +417,10 @@ class Statement extends PDOStatement {
 			$parameter = ':autoparam' . $parameter;
 		}
 
+		if ($dataType == PDO::PARAM_LOB) {
+			$dataType = Oci8::PARAM_BLOB;
+		}
+
 		//Adapt the type
 		switch ($dataType)
 		{
@@ -417,11 +440,15 @@ class Statement extends PDOStatement {
 				$oci_type = SQLT_CHR;
 				break;
 
-			case PDO::PARAM_LOB:
-				$oci_type = OCI_B_BLOB;
+			case Oci8::PARAM_BLOB:
+			case Oci8::PARAM_CLOB:
+				$oci_type = $dataType;
+				$this->_lobsValue[$parameter] = $variable;
 
 				// create a new descriptor for blob
 				$variable = $this->_pdoOci8->getNewDescriptor();
+
+				$this->_lobs[$parameter] = $variable;
 				break;
 
 			case PDO::PARAM_STMT:
@@ -447,10 +474,7 @@ class Statement extends PDOStatement {
 		}
 
 		// Bind the parameter
-		$result = oci_bind_by_name($this->_sth, $parameter, $variable, $maxLength, $oci_type);
-
-		return $result;
-
+		return @oci_bind_by_name($this->_sth, $parameter, $variable, $maxLength, $oci_type);
 	}
 
 	/**
@@ -495,6 +519,13 @@ class Statement extends PDOStatement {
 	 */
 	public function bindValue($parameter, $variable, $dataType = PDO::PARAM_STR)
 	{
+		if (is_array($variable)) {
+			$result = true;
+			foreach ($variable as $var) {
+				$result = $result && $this->bindParam($parameter, $var, $dataType);
+			}
+			return $result;
+		}
 		return $this->bindParam($parameter, $variable, $dataType);
 	}
 
@@ -698,30 +729,22 @@ class Statement extends PDOStatement {
 	 */
 	public function setFetchMode($fetchMode, $modeArg = null, array $ctorArgs = array())
 	{
+		$this->_fetchMode = $fetchMode;
+		$this->_fetchClassName = '\stdClass';
+		$this->_fetchCtorargs = array();
+		$this->_fetchColno = 0;
+		$this->_fetchIntoObject = null;
+
 		// See which fetch mode we have
 		switch ($fetchMode)
 		{
-			case PDO::FETCH_ASSOC:
-			case PDO::FETCH_NUM:
-			case PDO::FETCH_BOTH:
-			case PDO::FETCH_OBJ:
-				$this->_fetchMode = $fetchMode;
-				$this->_fetchColno = 0;
-				$this->_fetchClassName = '\stdClass';
-				$this->_fetchCtorargs = array();
-				$this->_fetchIntoObject = null;
-				break;
 			case PDO::FETCH_CLASS:
 			case PDO::FETCH_CLASS | PDO::FETCH_PROPS_LATE:
-				$this->_fetchMode = $fetchMode;
-				$this->_fetchColno = 0;
-				$this->_fetchClassName = '\stdClass';
 				if ($modeArg)
 				{
 					$this->_fetchClassName = $modeArg;
 				}
 				$this->_fetchCtorargs = $ctorArgs;
-				$this->_fetchIntoObject = null;
 				break;
 			case PDO::FETCH_INTO:
 				if ( ! is_object($modeArg))
@@ -729,22 +752,10 @@ class Statement extends PDOStatement {
 					throw new Oci8Exception(
 						'$modeArg must be instance of an object');
 				}
-				$this->_fetchMode = $fetchMode;
-				$this->_fetchColno = 0;
-				$this->_fetchClassName = '\stdClass';
-				$this->_fetchCtorargs = array();
 				$this->_fetchIntoObject = $modeArg;
 				break;
 			case PDO::FETCH_COLUMN:
-				$this->_fetchMode = $fetchMode;
 				$this->_fetchColno = (int) $modeArg;
-				$this->_fetchClassName = '\stdClass';
-				$this->_fetchCtorargs = array();
-				$this->_fetchIntoObject = null;
-				break;
-			default:
-				throw new Oci8Exception("Requested fetch mode is not supported " .
-					"by this implementation");
 				break;
 		}
 
@@ -772,7 +783,7 @@ class Statement extends PDOStatement {
 	 */
 	public function closeCursor()
 	{
-		throw new Oci8Exception("setFetchMode has not been implemented");
+		return oci_free_statement($this->_sth);
 	}
 
 	/**

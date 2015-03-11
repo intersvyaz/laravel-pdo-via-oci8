@@ -22,6 +22,10 @@ use yajra\Pdo\Oci8\Statement;
  */
 class Oci8 extends PDO {
 
+	// New param type for clob and blob support.
+	const PARAM_BLOB = OCI_B_BLOB;
+	const PARAM_CLOB = OCI_B_CLOB;
+
 	/**
 	 * Database handler
 	 *
@@ -61,24 +65,21 @@ class Oci8 extends PDO {
 	 */
 	public function __construct($dsn, $username, $password, array $options = array())
 	{
-		// Set default charset to AL32UTF8
-		$charset = 'AL32UTF8';
-		// Get the character set
-		if (array_key_exists("charset", $options))
-		{
-			$charset = $options["charset"];
+		$dbName = $this->parseDsn($dsn, 'dbname');
+		$charset = $this->parseDsn($dsn, 'charset');
+
+		if ($charset === null) {
+			$charset = 'AL32UTF8';
 		}
-		// Convert UTF8 charset to AL32UTF8
-		$charset = strtolower($charset) == 'utf8' ? 'AL32UTF8' : $charset;
 
 		// Attempt a connection
 		if (isset($options[PDO::ATTR_PERSISTENT]) && $options[PDO::ATTR_PERSISTENT])
 		{
-			$this->_dbh = @oci_pconnect($username, $password, $dsn, $charset);
+			$this->_dbh = @oci_pconnect($username, $password, $dbName, $charset);
 		}
 		else
 		{
-			$this->_dbh = @oci_connect($username, $password, $dsn, $charset);
+			$this->_dbh = @oci_connect($username, $password, $dbName, $charset);
 		}
 
 		// Check if connection was successful
@@ -470,4 +471,17 @@ class Oci8 extends PDO {
 		return $stmt->fetch();
 	}
 
+	/**
+	 * Parse DSN string and get $param value.
+	 * @param string $dsn
+	 * @param string $param
+	 * @return null
+	 */
+	protected function parseDsn($dsn, $param)
+	{
+		if (preg_match('/' . $param . '=(?<param>[^;]+)/', $dsn, $mathes)) {
+			return $mathes['param'];
+		}
+		return null;
+	}
 }
