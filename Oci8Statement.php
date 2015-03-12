@@ -1,10 +1,9 @@
-<?php namespace yajra\Pdo\Oci8;
+<?php
+namespace Intersvyaz\Pdo;
 
 use PDO;
 use PDOStatement;
 use OCI_Lob;
-use yajra\Pdo\Oci8;
-use yajra\Pdo\Oci8\Exceptions\Oci8Exception;
 
 /**
  * Oci8 Statement class to mimic the interface of the PDOStatement class
@@ -12,7 +11,7 @@ use yajra\Pdo\Oci8\Exceptions\Oci8Exception;
  * this so that instanceof check and type-hinting of existing code will work
  * seamlessly.
  */
-class Statement extends PDOStatement {
+class Oci8Statement extends PDOStatement {
 
 	/**
 	 * Statement handler
@@ -24,7 +23,7 @@ class Statement extends PDOStatement {
 	/**
 	 * PDO Oci8 driver
 	 *
-	 * @var \yajra\Pdo\Oci8
+	 * @var \Intersvyaz\Pdo\Oci8
 	 */
 	protected $_pdoOci8;
 

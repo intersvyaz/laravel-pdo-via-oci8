@@ -1,18 +1,10 @@
 <?php
 /**
  * PDO userspace driver proxying calls to PHP OCI8 driver
- *
- * @category Database
- * @package yajra/PDO-via-OCI8
- * @author Arjay Angeles <aqangeles@gmail.com>
- * @copyright Copyright (c) 2013 Arjay Angeles
- * @license MIT
  */
-namespace yajra\Pdo;
+namespace Intersvyaz\Pdo;
 
 use PDO;
-use yajra\Pdo\Oci8\Exceptions\Oci8Exception;
-use yajra\Pdo\Oci8\Statement;
 
 /**
  * Oci8 class to mimic the interface of the PDO class
@@ -102,7 +94,7 @@ class Oci8 extends PDO {
 	 *   pairs to set attribute values for the PDOStatement object that this
 	 *   method returns.
 	 * @throws Oci8Exception
-	 * @return Statement
+	 * @return Oci8Statement
 	 */
 	public function prepare($statement, $options = null)
 	{
@@ -154,7 +146,7 @@ class Oci8 extends PDO {
 			$options = array();
 		}
 
-		return new Statement($sth, $this, $options);
+		return new Oci8Statement($sth, $this, $options);
 	}
 
 	/**
@@ -273,14 +265,14 @@ class Oci8 extends PDO {
 
 	/**
 	 * Executes an SQL statement, returning the results as a
-	 * yajra\Pdo\Oci8\Statement object
+	 * Intersvyaz\Pdo\Oci8\Oci8Statement object
 	 *
 	 * @param string $statement The SQL statement to prepare and execute.
 	 * @param int|null $fetchMode The fetch mode must be one of the
 	 *   PDO::FETCH_* constants.
 	 * @param mixed|null $modeArg Column number, class name or object.
 	 * @param array|null $ctorArgs Constructor arguments.
-	 * @return Statement
+	 * @return Oci8Statement
 	 */
 	public function query(
 		$statement,
