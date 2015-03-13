@@ -407,9 +407,8 @@ class Oci8Statement extends PDOStatement {
 		&$variable,
 		$dataType = PDO::PARAM_STR,
 		$maxLength = -1,
-		$options = null)
+		$options = [])
 	{
-
 		//Replace the first @oci8param to a pseudo named parameter
 		if (is_numeric($parameter))
 		{
@@ -442,12 +441,17 @@ class Oci8Statement extends PDOStatement {
 			case Oci8::PARAM_BLOB:
 			case Oci8::PARAM_CLOB:
 				$oci_type = $dataType;
-				$this->_lobsValue[$parameter] = $variable;
+
+				if (!in_array(Oci8::LOB_NO_SAVE, $options)) {
+					$this->_lobsValue[$parameter] = $variable;
+				}
 
 				// create a new descriptor for blob
 				$variable = $this->_pdoOci8->getNewDescriptor();
 
-				$this->_lobs[$parameter] = $variable;
+				if (!in_array(Oci8::LOB_NO_SAVE, $options)) {
+					$this->_lobs[$parameter] = $variable;
+				}
 				break;
 
 			case PDO::PARAM_STMT:
