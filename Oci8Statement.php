@@ -91,11 +91,18 @@ class Oci8Statement extends PDOStatement {
 	protected $_fetchIntoObject = null;
 
 	/**
-	 * Array of lob objects, which binded in bindParam.
+	 * Lob object, when need lob->save after oci_execute.
 	 *
 	 * @var OCI_Lob[]
 	 */
-	protected $_lobs = array();
+	protected $_saveLobs = array();
+
+	/**
+	 * Lob object, when need lob->write after oci_bind_by_name.
+	 *
+	 * @var OCI_Lob[]
+	 */
+	protected $_writeLobs = array();
 
 	/**
 	 * Array of param value, which binded in bindParam as lob.
@@ -138,7 +145,7 @@ class Oci8Statement extends PDOStatement {
 	public function execute($inputParams = null)
 	{
 		$mode = OCI_COMMIT_ON_SUCCESS;
-		if ($this->_pdoOci8->inTransaction() || count($this->_lobs) > 0)
+		if ($this->_pdoOci8->inTransaction() || count($this->_saveLobs) > 0 || count($this->_writeLobs) > 0)
 		{
 			$mode = OCI_DEFAULT;
 		}
@@ -152,11 +159,18 @@ class Oci8Statement extends PDOStatement {
 			}
 		}
 
+		if (count($this->_writeLobs) > 0) {
+			foreach ($this->_writeLobs as $lobName => $lob) {
+				$type = $lob['type'] == Oci8::PARAM_BLOB ? OCI_TEMP_BLOB : OCI_TEMP_CLOB;
+				$lob['object']->writetemporary($this->_lobsValue[$lobName], $type);
+			}
+		}
+
 		$result = @oci_execute($this->_sth, $mode);
 
-		if ($result) {
-			foreach ($this->_lobs as $lobName => $lob) {
-				$lob->save($this->_lobsValue[$lobName]);
+		if ($result && count($this->_saveLobs) > 0) {
+			foreach ($this->_saveLobs as $lobName => $object) {
+				$object->save($this->_lobsValue[$lobName]);
 			}
 		}
 
@@ -166,7 +180,7 @@ class Oci8Statement extends PDOStatement {
 			throw new Oci8Exception($e['message'], $e['code']);
 		}
 
-		if (!$this->_pdoOci8->inTransaction() && count($this->_lobs) > 0)
+		if (!$this->_pdoOci8->inTransaction() && (count($this->_saveLobs) > 0 || count($this->_writeLobs) > 0))
 		{
 			return oci_commit($this->_pdoOci8->_dbh);
 		}
@@ -407,7 +421,7 @@ class Oci8Statement extends PDOStatement {
 		&$variable,
 		$dataType = PDO::PARAM_STR,
 		$maxLength = -1,
-		$options = [])
+		$options = [Oci8::LOB_SQL])
 	{
 		//Replace the first @oci8param to a pseudo named parameter
 		if (is_numeric($parameter))
@@ -442,15 +456,13 @@ class Oci8Statement extends PDOStatement {
 			case Oci8::PARAM_CLOB:
 				$oci_type = $dataType;
 
-				if (!in_array(Oci8::LOB_NO_SAVE, $options)) {
-					$this->_lobsValue[$parameter] = $variable;
-				}
+				$this->_lobsValue[$parameter] = $variable;
+				$variable = $this->_pdoOci8->getNewDescriptor(OCI_D_LOB);
 
-				// create a new descriptor for blob
-				$variable = $this->_pdoOci8->getNewDescriptor();
-
-				if (!in_array(Oci8::LOB_NO_SAVE, $options)) {
-					$this->_lobs[$parameter] = $variable;
+				if (in_array(Oci8::LOB_SQL, $options)) {
+					$this->_saveLobs[$parameter] = $variable;
+				} elseif (in_array(Oci8::LOB_PL_SQL, $options)) {
+					$this->_writeLobs[$parameter] = ['type' => $oci_type, 'object' => $variable];
 				}
 				break;
 

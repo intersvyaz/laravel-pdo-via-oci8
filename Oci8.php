@@ -17,7 +17,8 @@ class Oci8 extends PDO {
 	// New param type for clob and blob support.
 	const PARAM_BLOB = OCI_B_BLOB;
 	const PARAM_CLOB = OCI_B_CLOB;
-	const LOB_NO_SAVE = 0;
+	const LOB_SQL = 0;
+	const LOB_PL_SQL = 1;
 
 	/**
 	 * Database handler
