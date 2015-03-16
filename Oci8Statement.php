@@ -582,11 +582,13 @@ class Oci8Statement extends PDOStatement {
 	 *   or an object with properties corresponding to each column name.
 	 */
 	public function fetchAll(
-		$fetchMode = PDO::FETCH_BOTH,
+		$fetchMode = null,
 		$fetchArgument = null,
 		$ctorArgs = array())
 	{
-		$this->setFetchMode($fetchMode, $fetchArgument, $ctorArgs);
+		if ($fetchMode !== null) {
+			$this->setFetchMode($fetchMode, $fetchArgument, $ctorArgs);
+		}
 
 		$results = array();
 		while ($row = $this->fetch())
