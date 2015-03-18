@@ -106,26 +106,6 @@ class Oci8 extends PDO {
 			$options = $this->_options;
 		}
 
-		// Skip replacing ? with a pseudo named parameter on alter/create table command
-		if ( ! preg_match('/^alter+ +table/', strtolower(trim($statement)))
-			and ! preg_match('/^create+ +table/', strtolower(trim($statement)))
-		)
-		{
-			// Replace ? with a pseudo named parameter
-			$newStatement = null;
-			$parameter = 0;
-			while ($newStatement !== $statement)
-			{
-				if ($newStatement !== null)
-				{
-					$statement = $newStatement;
-				}
-				$newStatement = preg_replace('/\?/', ':autoparam' . $parameter, $statement, 1);
-				$parameter++;
-			}
-			$statement = $newStatement;
-		}
-
 		// check if statement is insert function
 		if (strpos(strtolower($statement), 'insert into') !== false)
 		{

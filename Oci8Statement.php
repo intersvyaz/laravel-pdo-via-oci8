@@ -423,10 +423,9 @@ class Oci8Statement extends PDOStatement {
 		$maxLength = -1,
 		$options = [Oci8::LOB_SQL])
 	{
-		//Replace the first @oci8param to a pseudo named parameter
 		if (is_numeric($parameter))
 		{
-			$parameter = ':autoparam' . $parameter;
+			throw new Oci8Exception("bind numerical params has not been implemented");
 		}
 
 		if ($dataType == PDO::PARAM_LOB) {
