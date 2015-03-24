@@ -57,7 +57,7 @@ class Oci8 extends PDO {
 	 * @param array $options [optional]
 	 * @throws Oci8Exception
 	 */
-	public function __construct($dsn, $username, $password, array $options = array())
+	public function __construct($dsn, $username, $password, $options = array())
 	{
 		$dbName = $this->parseDsn($dsn, 'dbname');
 		$charset = $this->parseDsn($dsn, 'charset');
