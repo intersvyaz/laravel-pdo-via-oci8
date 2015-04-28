@@ -3,6 +3,7 @@ namespace Intersvyaz\Pdo;
 
 use PDOException;
 
-class Oci8Exception extends PDOException {
+class Oci8Exception extends PDOException
+{
 
 }
