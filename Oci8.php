@@ -24,7 +24,7 @@ class Oci8 extends PDO
     /**
      * @var resource Database handler
      */
-    public $_dbh;
+    private $dbh;
     /**
      * @var array Driver options
      */
@@ -63,6 +63,13 @@ class Oci8 extends PDO
     }
 
     /**
+     * @return resource Database handler
+     */
+    public function dbh(){
+        return $this->dbh;
+    }
+
+    /**
      * Prepares a statement for execution and returns a statement object
      *
      * @param string $statement This must be a valid SQL statement for the
@@ -88,10 +95,10 @@ class Oci8 extends PDO
         }
 
         // Prepare the statement
-        $sth = @oci_parse($this->_dbh, $statement);
+        $sth = @oci_parse($this->dbh, $statement);
 
         if (!$sth) {
-            $e = oci_error($this->_dbh);
+            $e = oci_error($this->dbh);
             throw new Oci8Exception($e['message']);
         }
 
@@ -152,7 +159,7 @@ class Oci8 extends PDO
             throw new Oci8Exception('There is no active transaction');
         }
 
-        if (oci_commit($this->_dbh)) {
+        if (oci_commit($this->dbh)) {
             $this->inTransaction = false;
 
             return true;
@@ -173,7 +180,7 @@ class Oci8 extends PDO
             throw new Oci8Exception('There is no active transaction');
         }
 
-        if (oci_rollback($this->_dbh)) {
+        if (oci_rollback($this->dbh)) {
             $this->inTransaction = false;
 
             return true;
@@ -291,7 +298,7 @@ class Oci8 extends PDO
      */
     public function errorInfo()
     {
-        $e = oci_error($this->_dbh);
+        $e = oci_error($this->dbh);
 
         if (is_array($e)) {
             return [
@@ -333,7 +340,7 @@ class Oci8 extends PDO
      */
     public function getNewCursor()
     {
-        return oci_new_cursor($this->_dbh);
+        return oci_new_cursor($this->dbh);
     }
 
     /**
@@ -346,7 +353,7 @@ class Oci8 extends PDO
      */
     public function getNewDescriptor($type = OCI_D_LOB)
     {
-        return oci_new_descriptor($this->_dbh, $type);
+        return oci_new_descriptor($this->dbh, $type);
     }
 
     /**
@@ -431,12 +438,12 @@ class Oci8 extends PDO
     private function connect($username, $password, $dbName, $charset, array $options = [])
     {
         if (array_key_exists(PDO::ATTR_PERSISTENT, $options) && $options[PDO::ATTR_PERSISTENT]) {
-            $this->_dbh = @oci_pconnect($username, $password, $dbName, $charset);
+            $this->dbh = @oci_pconnect($username, $password, $dbName, $charset);
         } else {
-            $this->_dbh = @oci_connect($username, $password, $dbName, $charset);
+            $this->dbh = @oci_connect($username, $password, $dbName, $charset);
         }
 
-        if (!$this->_dbh) {
+        if (!$this->dbh) {
             $e = oci_error();
             throw new Oci8Exception($e['message']);
         }
