@@ -136,7 +136,7 @@ class Oci8Statement extends PDOStatement
         }
 
         if (!$this->pdoOci8->inTransaction() && (count($this->saveLobs) > 0 || count($this->writeLobs) > 0)) {
-            return oci_commit($this->pdoOci8->dbh());
+            return $this->pdoOci8->commit();
         }
 
         return $result;
@@ -389,7 +389,7 @@ class Oci8Statement extends PDOStatement
                 $type_name = isset($options['type_name']) ? $options['type_name'] : '';
 
                 // set params required to use custom type.
-                $variable = oci_new_collection($this->pdoOci8->dbh(), $type_name, $schema);
+                $variable = $this->pdoOci8->getNewCollection($type_name, $schema);
                 break;
 
             default:

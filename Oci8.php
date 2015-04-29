@@ -33,10 +33,6 @@ class Oci8 extends PDO
      * @var bool Whether currently in a transaction
      */
     private $inTransaction = false;
-    /**
-     * @var string insert query statement table variable
-     */
-    private $table;
 
     /**
      * Creates a PDO instance representing a connection to a database
@@ -50,23 +46,12 @@ class Oci8 extends PDO
     public function __construct($dsn, $username, $password, $options = [])
     {
         $dbName = $this->parseDsn($dsn, 'dbname');
-        $charset = $this->parseDsn($dsn, 'charset');
-
-        if ($charset === null) {
-            $charset = 'AL32UTF8';
-        }
+        $charset = $this->parseDsn($dsn, 'charset', 'AL32UTF8');
 
         $this->connect($username, $password, $dbName, $charset, $options);
 
         // Save the options
         $this->options = $options;
-    }
-
-    /**
-     * @return resource Database handler
-     */
-    public function dbh(){
-        return $this->dbh;
     }
 
     /**
@@ -85,13 +70,6 @@ class Oci8 extends PDO
         // Get instance options
         if ($options == null) {
             $options = $this->options;
-        }
-
-        // check if statement is insert function
-        if (strpos(strtolower($statement), 'insert into') !== false) {
-            preg_match('/insert into\s+([^\s\(]*)?/', strtolower($statement), $matches);
-            // store insert into table name
-            $this->table = $matches[1];
         }
 
         // Prepare the statement
@@ -245,27 +223,13 @@ class Oci8 extends PDO
     }
 
     /**
-     * returns the current value of the sequence related to the table where
-     * record is inserted. The sequence name should follow this for it to work
-     * properly:
-     *   {$table}.'_'.{$column}.'_seq'
-     * Oracle does not support the last inserted ID functionality like MySQL.
-     * If the above sequence does not exist, the method will return 0;
-     *
+     * Method not implemented
      * @param string $name Sequence name; no use in this context
      * @return mixed Last sequence number or 0 if sequence does not exist
      */
     public function lastInsertId($name = null)
     {
-        $sequence = $this->table . "_" . $name . "_seq";
-        if (!$this->checkSequence($sequence)) {
-            return 0;
-        }
-
-        $stmt = $this->query("select {$sequence}.currval from dual", PDO::FETCH_COLUMN);
-        $id = $stmt->fetch();
-
-        return $id;
+        throw new Oci8Exception("Method not implemented");
     }
 
     /**
@@ -369,6 +333,20 @@ class Oci8 extends PDO
     }
 
     /**
+     * Special non PDO function
+     * Allocates new collection object
+     *
+     * @param string $typeName Should be a valid named type (uppercase).
+     * @param string $schema Should point to the scheme, where the named type was created.
+     *  The name of the current user is the default value.
+     * @return \OCI_Collection
+     */
+    public function getNewCollection($typeName, $schema)
+    {
+        return oci_new_collection($this->dbh, $typeName, $schema);
+    }
+
+    /**
      * Places quotes around the input string
      *  If you are using this function to build SQL statements, you are strongly
      * recommended to use prepare() to prepare SQL statements with bound
@@ -416,15 +394,16 @@ class Oci8 extends PDO
      * Parse DSN string and get $param value.
      * @param string $dsn
      * @param string $param
-     * @return null
+     * @param mixed $default
+     * @return string|null
      */
-    protected function parseDsn($dsn, $param)
+    protected function parseDsn($dsn, $param, $default = null)
     {
         if (preg_match('/' . $param . '=(?<param>[^;]+)/', $dsn, $mathes)) {
             return $mathes['param'];
         }
 
-        return null;
+        return $default;
     }
 
     /**
