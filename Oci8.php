@@ -22,32 +22,17 @@ class Oci8 extends PDO
     const LOB_PL_SQL = 1;
 
     /**
-     * Database handler
-     *
-     * @var resource
+     * @var resource Database handler
      */
-    public $_dbh;
-
+    private $dbh;
     /**
-     * Driver options
-     *
-     * @var array
+     * @var array Driver options
      */
-    protected $_options = [];
-
+    private $options = [];
     /**
-     * Whether currently in a transaction
-     *
-     * @var bool
+     * @var bool Whether currently in a transaction
      */
-    protected $_inTransaction = false;
-
-    /**
-     * insert query statement table variable
-     *
-     * @var string
-     */
-    protected $_table;
+    private $inTransaction = false;
 
     /**
      * Creates a PDO instance representing a connection to a database
@@ -61,27 +46,12 @@ class Oci8 extends PDO
     public function __construct($dsn, $username, $password, $options = [])
     {
         $dbName = $this->parseDsn($dsn, 'dbname');
-        $charset = $this->parseDsn($dsn, 'charset');
+        $charset = $this->parseDsn($dsn, 'charset', 'AL32UTF8');
 
-        if ($charset === null) {
-            $charset = 'AL32UTF8';
-        }
-
-        // Attempt a connection
-        if (isset($options[PDO::ATTR_PERSISTENT]) && $options[PDO::ATTR_PERSISTENT]) {
-            $this->_dbh = @oci_pconnect($username, $password, $dbName, $charset);
-        } else {
-            $this->_dbh = @oci_connect($username, $password, $dbName, $charset);
-        }
-
-        // Check if connection was successful
-        if (!$this->_dbh) {
-            $e = oci_error();
-            throw new Oci8Exception($e['message']);
-        }
+        $this->connect($username, $password, $dbName, $charset, $options);
 
         // Save the options
-        $this->_options = $options;
+        $this->options = $options;
     }
 
     /**
@@ -99,21 +69,14 @@ class Oci8 extends PDO
     {
         // Get instance options
         if ($options == null) {
-            $options = $this->_options;
-        }
-
-        // check if statement is insert function
-        if (strpos(strtolower($statement), 'insert into') !== false) {
-            preg_match('/insert into\s+([^\s\(]*)?/', strtolower($statement), $matches);
-            // store insert into table name
-            $this->_table = $matches[1];
+            $options = $this->options;
         }
 
         // Prepare the statement
-        $sth = @oci_parse($this->_dbh, $statement);
+        $sth = @oci_parse($this->dbh, $statement);
 
         if (!$sth) {
-            $e = oci_error($this->_dbh);
+            $e = oci_error($this->dbh);
             throw new Oci8Exception($e['message']);
         }
 
@@ -136,7 +99,7 @@ class Oci8 extends PDO
             throw new Oci8Exception('There is already an active transaction');
         }
 
-        $this->_inTransaction = true;
+        $this->inTransaction = true;
 
         return true;
     }
@@ -159,7 +122,7 @@ class Oci8 extends PDO
      */
     public function inTransaction()
     {
-        return $this->_inTransaction;
+        return $this->inTransaction;
     }
 
     /**
@@ -174,8 +137,8 @@ class Oci8 extends PDO
             throw new Oci8Exception('There is no active transaction');
         }
 
-        if (oci_commit($this->_dbh)) {
-            $this->_inTransaction = false;
+        if (oci_commit($this->dbh)) {
+            $this->inTransaction = false;
 
             return true;
         }
@@ -195,8 +158,8 @@ class Oci8 extends PDO
             throw new Oci8Exception('There is no active transaction');
         }
 
-        if (oci_rollback($this->_dbh)) {
-            $this->_inTransaction = false;
+        if (oci_rollback($this->dbh)) {
+            $this->inTransaction = false;
 
             return true;
         }
@@ -213,7 +176,7 @@ class Oci8 extends PDO
      */
     public function setAttribute($attribute, $value)
     {
-        $this->_options[$attribute] = $value;
+        $this->options[$attribute] = $value;
 
         return true;
     }
@@ -244,12 +207,8 @@ class Oci8 extends PDO
      * @param array|null $ctorArgs Constructor arguments.
      * @return Oci8Statement
      */
-    public function query(
-        $statement,
-        $fetchMode = null,
-        $modeArg = null,
-        array $ctorArgs = []
-    ) {
+    public function query($statement, $fetchMode = null, $modeArg = null, array $ctorArgs = [])
+    {
         $stmt = $this->prepare($statement);
         $stmt->execute();
         if ($fetchMode) {
@@ -260,27 +219,13 @@ class Oci8 extends PDO
     }
 
     /**
-     * returns the current value of the sequence related to the table where
-     * record is inserted. The sequence name should follow this for it to work
-     * properly:
-     *   {$table}.'_'.{$column}.'_seq'
-     * Oracle does not support the last inserted ID functionality like MySQL.
-     * If the above sequence does not exist, the method will return 0;
-     *
+     * Method not implemented
      * @param string $name Sequence name; no use in this context
      * @return mixed Last sequence number or 0 if sequence does not exist
      */
     public function lastInsertId($name = null)
     {
-        $sequence = $this->_table . "_" . $name . "_seq";
-        if (!$this->checkSequence($sequence)) {
-            return 0;
-        }
-
-        $stmt = $this->query("select {$sequence}.currval from dual", PDO::FETCH_COLUMN);
-        $id = $stmt->fetch();
-
-        return $id;
+        throw new Oci8Exception("Method not implemented");
     }
 
     /**
@@ -313,7 +258,7 @@ class Oci8 extends PDO
      */
     public function errorInfo()
     {
-        $e = oci_error($this->_dbh);
+        $e = oci_error($this->dbh);
 
         if (is_array($e)) {
             return [
@@ -339,8 +284,8 @@ class Oci8 extends PDO
             return "oci8";
         }
 
-        if (isset($this->_options[$attribute])) {
-            return $this->_options[$attribute];
+        if (isset($this->options[$attribute])) {
+            return $this->options[$attribute];
         }
 
         return null;
@@ -355,7 +300,7 @@ class Oci8 extends PDO
      */
     public function getNewCursor()
     {
-        return oci_new_cursor($this->_dbh);
+        return oci_new_cursor($this->dbh);
     }
 
     /**
@@ -368,7 +313,7 @@ class Oci8 extends PDO
      */
     public function getNewDescriptor($type = OCI_D_LOB)
     {
-        return oci_new_descriptor($this->_dbh, $type);
+        return oci_new_descriptor($this->dbh, $type);
     }
 
     /**
@@ -381,6 +326,20 @@ class Oci8 extends PDO
     public function closeCursor($cursor)
     {
         return oci_free_statement($cursor);
+    }
+
+    /**
+     * Special non PDO function
+     * Allocates new collection object
+     *
+     * @param string $typeName Should be a valid named type (uppercase).
+     * @param string $schema Should point to the scheme, where the named type was created.
+     *  The name of the current user is the default value.
+     * @return \OCI_Collection
+     */
+    public function getNewCollection($typeName, $schema)
+    {
+        return oci_new_collection($this->dbh, $typeName, $schema);
     }
 
     /**
@@ -431,14 +390,37 @@ class Oci8 extends PDO
      * Parse DSN string and get $param value.
      * @param string $dsn
      * @param string $param
-     * @return null
+     * @param mixed $default
+     * @return string|null
      */
-    protected function parseDsn($dsn, $param)
+    protected function parseDsn($dsn, $param, $default = null)
     {
         if (preg_match('/' . $param . '=(?<param>[^;]+)/', $dsn, $mathes)) {
             return $mathes['param'];
         }
 
-        return null;
+        return $default;
+    }
+
+    /**
+     * Connect to database
+     * @param string $username
+     * @param string $password
+     * @param string $dbName
+     * @param string $charset
+     * @param array $options
+     */
+    private function connect($username, $password, $dbName, $charset, array $options = [])
+    {
+        if (array_key_exists(PDO::ATTR_PERSISTENT, $options) && $options[PDO::ATTR_PERSISTENT]) {
+            $this->dbh = @oci_pconnect($username, $password, $dbName, $charset);
+        } else {
+            $this->dbh = @oci_connect($username, $password, $dbName, $charset);
+        }
+
+        if (!$this->dbh) {
+            $e = oci_error();
+            throw new Oci8Exception($e['message']);
+        }
     }
 }
