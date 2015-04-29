@@ -207,12 +207,8 @@ class Oci8 extends PDO
      * @param array|null $ctorArgs Constructor arguments.
      * @return Oci8Statement
      */
-    public function query(
-        $statement,
-        $fetchMode = null,
-        $modeArg = null,
-        array $ctorArgs = []
-    ) {
+    public function query($statement, $fetchMode = null, $modeArg = null, array $ctorArgs = [])
+    {
         $stmt = $this->prepare($statement);
         $stmt->execute();
         if ($fetchMode) {
