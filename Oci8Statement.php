@@ -23,14 +23,6 @@ class Oci8Statement extends PDOStatement
      */
     private $pdoOci8;
     /**
-     * @var array Contains the current data
-     */
-    private $current;
-    /**
-     * @var mixed Contains the current key
-     */
-    private $key;
-    /**
      * @var boolean flag to convert LOB to string or not
      */
     private $returnLobs = true;
@@ -41,11 +33,11 @@ class Oci8Statement extends PDOStatement
     /**
      * @var int Fetch mode selected via setFetchMode()
      */
-    private $fetchMode = PDO::ATTR_DEFAULT_FETCH_MODE;
+    private $fetchStyle = PDO::ATTR_DEFAULT_FETCH_MODE;
     /**
      * @var int Column number for PDO::FETCH_COLUMN fetch mode
      */
-    private $_fetchColno = 0;
+    private $fetchColno = 0;
     /**
      * @var string Class name for PDO::FETCH_CLASS fetch mode
      */
@@ -57,7 +49,7 @@ class Oci8Statement extends PDOStatement
     /**
      * @var object Object reference for PDO::FETCH_INTO fetch mode
      */
-    private $fetchIntoObject = null;
+    private $fetchIntoObject;
     /**
      * @var OCI_Lob[] Lob object, when need lob->save after oci_execute.
      */
@@ -145,7 +137,7 @@ class Oci8Statement extends PDOStatement
     /**
      * Fetches the next row from a result set
      *
-     * @param int|null $fetchMode Controls how the next row will be returned to
+     * @param int|null $fetchStyle Controls how the next row will be returned to
      *   the caller. This value must be one of the PDO::FETCH_* constants,
      *   defaulting to value of PDO::ATTR_DEFAULT_FETCH_MODE (which defaults to
      *   PDO::FETCH_BOTH).
@@ -161,152 +153,152 @@ class Oci8Statement extends PDOStatement
      *   fetch type. In all cases, FALSE is returned on failure.
      * @todo Implement cursorOrientation and cursorOffset
      */
-    public function fetch(
-        $fetchMode = null,
-        $cursorOrientation = PDO::FETCH_ORI_NEXT,
-        $cursorOffset = 0
-    ) {
-        // If not fetchMode was specified, used the default value of or the mode
-        // set by the last call to setFetchMode()
-        if ($fetchMode === null) {
-            $fetchMode = $this->fetchMode;
-        }
+    public function fetch($fetchStyle = null, $cursorOrientation = PDO::FETCH_ORI_NEXT, $cursorOffset = 0)
+    {
+        $fetchStyle = $fetchStyle ?: $this->fetchStyle;
 
-        // Convert array keys (or object properties) to lowercase
-        $toLowercase = ($this->getAttribute(PDO::ATTR_CASE) == PDO::CASE_LOWER);
-        // Convert null value to empty string
-        $nullToString = ($this->getAttribute(PDO::ATTR_ORACLE_NULLS) == PDO::NULL_TO_STRING);
-        // Convert empty string to null
-        $nullEmptyString = ($this->getAttribute(PDO::ATTR_ORACLE_NULLS) == PDO::NULL_EMPTY_STRING);
+        $toLowercase = ($this->getAttribute(PDO::ATTR_CASE) === PDO::CASE_LOWER);
 
         // Determine the fetch mode
-        switch ($fetchMode) {
+        switch ($fetchStyle) {
             case PDO::FETCH_BOTH:
-                $rs = oci_fetch_array($this->sth); // Fetches both; nice!
-                if ($rs === false) {
-                    return false;
-                }
-                if ($toLowercase) {
-                    $rs = array_change_key_case($rs);
-                }
-                if ($this->returnLobs && is_array($rs)) {
-                    foreach ($rs as $field => $value) {
-                        if (is_object($value)) {
-                            $rs[$field] = $value->load();
-                        }
-                    }
-                }
-
-                return $rs;
+                return $this->fetchArray(OCI_BOTH + OCI_RETURN_NULLS, $toLowercase);
 
             case PDO::FETCH_ASSOC:
-                $rs = oci_fetch_assoc($this->sth);
-                if ($rs === false) {
-                    return false;
-                }
-                if ($toLowercase) {
-                    $rs = array_change_key_case($rs);
-                }
-                if ($this->returnLobs && is_array($rs)) {
-                    foreach ($rs as $field => $value) {
-                        if (is_object($value)) {
-                            $rs[$field] = $value->load();
-                        }
-                    }
-                }
-
-                return $rs;
+                return $this->fetchArray(OCI_ASSOC + OCI_RETURN_NULLS, $toLowercase);
 
             case PDO::FETCH_NUM:
-                $rs = oci_fetch_row($this->sth);
-                if ($rs === false) {
-                    return false;
-                }
-                if ($this->returnLobs && is_array($rs)) {
-                    foreach ($rs as $field => $value) {
-                        if (is_object($value)) {
-                            $rs[$field] = $value->load();
-                        }
-                    }
-                }
-
-                return $rs;
+                return $this->fetchArray(OCI_NUM + OCI_RETURN_NULLS, false);
 
             case PDO::FETCH_COLUMN:
-                $rs = oci_fetch_row($this->sth);
-                $colno = (int)$this->_fetchColno;
-                if (is_array($rs) && array_key_exists($colno, $rs)) {
-                    $value = $rs[$colno];
-                    if (is_object($value)) {
-                        return $value->load();
-                    } else {
-                        return $value;
-                    }
+                return $this->fetchColumn((int)$this->fetchColno);
+
+            case PDO::FETCH_INTO:
+                $rs = $this->fetchArray(OCI_ASSOC + OCI_RETURN_NULLS, $toLowercase);
+                if (is_object($this->fetchIntoObject)) {
+                    return $this->populateObject($this->fetchIntoObject, $rs);
                 } else {
                     return false;
                 }
-                break;
 
             case PDO::FETCH_OBJ:
-            case PDO::FETCH_INTO:
             case PDO::FETCH_CLASS:
             case PDO::FETCH_CLASS | PDO::FETCH_PROPS_LATE:
-                $rs = oci_fetch_assoc($this->sth);
-                if ($rs === false) {
-                    return false;
-                }
-                if ($toLowercase) {
-                    $rs = array_change_key_case($rs);
-                }
+                $className = ($fetchStyle === PDO::FETCH_OBJ) ? '\stdClass' : $this->fetchClassName;
+                $ctorargs = ($fetchStyle === PDO::FETCH_OBJ) ? [] : $this->fetchCtorargs;
 
-                if ($fetchMode === PDO::FETCH_INTO) {
-                    if (is_object($this->fetchIntoObject)) {
-                        $object = $this->fetchIntoObject;
-                    } else {
-                        // Object to set into has not been set
-                        return false;
-                    }
-                } else {
-                    if ($fetchMode === PDO::FETCH_OBJ) {
-                        $className = '\stdClass';
-                        $ctorargs = [];
-                    } else {
-                        $className = $this->fetchClassName;
-                        $ctorargs = $this->fetchCtorargs;
-                    }
-
-                    if ($ctorargs) {
-                        $reflectionClass = new \ReflectionClass($className);
-                        $object = $reflectionClass->newInstanceArgs($ctorargs);
-                    } else {
-                        $object = new $className();
-                    }
-                }
-
-                // Format recordsets values depending on options
-                foreach ($rs as $field => $value) {
-                    // convert null to empty string
-                    if (is_null($value) && $nullToString) {
-                        $rs[$field] = '';
-                    }
-
-                    // convert empty string to null
-                    if (empty($rs[$field]) && $nullEmptyString) {
-                        $rs[$field] = null;
-                    }
-
-                    // convert LOB to string
-                    if ($this->returnLobs && is_object($value)) {
-                        $object->$field = $value->load();
-                    } else {
-                        $object->$field = $value;
-                    }
-                }
-
-                return $object;
+                return $this->fetchObject($className, $ctorargs);
         }
 
         return false;
+    }
+
+    /**
+     * Set the default fetch mode for this statement
+     *
+     * @param int|null $mode The fetch mode must be one of the
+     *   PDO::FETCH_* constants.
+     * @param mixed|null $modeArg Column number, class name or object.
+     * @param array|null $ctorArgs Constructor arguments.
+     * @throws Oci8Exception
+     * @return bool TRUE on success or FALSE on failure.
+     */
+    public function setFetchMode($mode, $modeArg = null, array $ctorArgs = [])
+    {
+        $this->fetchStyle = $mode;
+        $this->fetchClassName = '\stdClass';
+        $this->fetchCtorargs = [];
+        $this->fetchColno = 0;
+        $this->fetchIntoObject = null;
+
+        // See which fetch mode we have
+        switch ($mode) {
+            case PDO::FETCH_CLASS:
+            case PDO::FETCH_CLASS | PDO::FETCH_PROPS_LATE:
+                if ($modeArg) {
+                    $this->fetchClassName = $modeArg;
+                }
+                $this->fetchCtorargs = $ctorArgs;
+                break;
+            case PDO::FETCH_INTO:
+                if (!is_object($modeArg)) {
+                    throw new Oci8Exception('$modeArg must be instance of an object');
+                }
+                $this->fetchIntoObject = $modeArg;
+                break;
+            case PDO::FETCH_COLUMN:
+                $this->fetchColno = (int)$modeArg;
+                break;
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns a single column from the next row of a result set
+     *
+     * @param int $colNumber 0-indexed number of the column you wish to retrieve
+     *   from the row. If no value is supplied, it fetches the first column.
+     * @return string Returns a single column in the next row of a result set.
+     */
+    public function fetchColumn($colNumber = 0)
+    {
+        $rs = oci_fetch_array($this->sth, OCI_NUM + OCI_RETURN_NULLS + ($this->returnLobs ? OCI_RETURN_LOBS : 0));
+        if (is_array($rs) && array_key_exists((int)$colNumber, $rs)) {
+            return $rs[(int)$colNumber];
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns an array containing all of the result set rows
+     *
+     * @param int $fetchMode Controls the contents of the returned array as
+     *   documented in PDOStatement::fetch.
+     * @param mixed $fetchArgument This argument has a different meaning
+     *   depending on the value of the fetchMode parameter.
+     * @param array $ctorArgs [optional] Arguments of custom class constructor
+     *   when the fetch_style parameter is PDO::FETCH_CLASS.
+     * @return array Array containing all of the remaining rows in the result
+     *   set. The array represents each row as either an array of column values
+     *   or an object with properties corresponding to each column name.
+     */
+    public function fetchAll($fetchMode = null, $fetchArgument = null, $ctorArgs = null)
+    {
+        if ($fetchMode !== null) {
+            $this->setFetchMode($fetchMode, $fetchArgument, $ctorArgs?:[]);
+        }
+
+        $results = [];
+        while ($row = $this->fetch()) {
+            $results[] = $row;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Fetches the next row and returns it as an object
+     *
+     * @param string $className
+     * @param array $ctorArgs
+     * @return mixed
+     */
+    public function fetchObject($className = null, $ctorArgs = null)
+    {
+        $className = $className?:$this->fetchClassName;
+
+        $toLowercase = ($this->getAttribute(PDO::ATTR_CASE) === PDO::CASE_LOWER);
+        $rs = $this->fetchArray(OCI_ASSOC + OCI_RETURN_NULLS, $toLowercase);
+        if ($ctorArgs) {
+            $reflectionClass = new \ReflectionClass($className);
+            $object = $reflectionClass->newInstanceArgs($ctorArgs);
+        } else {
+            $object = new $className();
+        }
+
+        return $this->populateObject($object, $rs);
     }
 
     /**
@@ -402,34 +394,6 @@ class Oci8Statement extends PDOStatement
     }
 
     /**
-     * Binds a column to a PHP variable
-     *
-     * @param mixed $column Number of the column (1-indexed) or name of the
-     *   column in the result set. If using the column name, be aware that the
-     *   name should match the case of the column, as returned by the driver.
-     * @param mixed $variable The PHP to which the column should be bound.
-     * @param int $dataType Data type of the parameter, specified by the
-     *   PDO::PARAM_* constants.
-     * @param int $maxLength A hint for pre-allocation.
-     * @param array $options [optional] Optional parameter(s) for the driver.
-     * @throws Oci8Exception
-     * @return bool TRUE on success or FALSE on failure.
-     * @todo Implement this functionality by creating a table map of the
-     *       variables passed in here, and, when iterating over the values
-     *       of the query or fetching rows, assign data from each column
-     *       to their respective variable in the map.
-     */
-    public function bindColumn(
-        $column,
-        &$variable,
-        $dataType = null,
-        $maxLength = -1,
-        $options = null
-    ) {
-        throw new Oci8Exception("bindColumn has not been implemented");
-    }
-
-    /**
      * Binds a value to a parameter
      *
      * @param string $parameter Parameter identifier. For a prepared statement
@@ -463,64 +427,6 @@ class Oci8Statement extends PDOStatement
     public function rowCount()
     {
         return oci_num_rows($this->sth);
-    }
-
-    /**
-     * Returns a single column from the next row of a result set
-     *
-     * @param int $colNumber 0-indexed number of the column you wish to retrieve
-     *   from the row. If no value is supplied, it fetches the first column.
-     * @return string Returns a single column in the next row of a result set.
-     */
-    public function fetchColumn($colNumber = null)
-    {
-        $this->setFetchMode(PDO::FETCH_COLUMN, $colNumber);
-
-        return $this->fetch();
-    }
-
-    /**
-     * Returns an array containing all of the result set rows
-     *
-     * @param int $fetchMode Controls the contents of the returned array as
-     *   documented in PDOStatement::fetch.
-     * @param mixed $fetchArgument This argument has a different meaning
-     *   depending on the value of the fetchMode parameter.
-     * @param array $ctorArgs [optional] Arguments of custom class constructor
-     *   when the fetch_style parameter is PDO::FETCH_CLASS.
-     * @return array Array containing all of the remaining rows in the result
-     *   set. The array represents each row as either an array of column values
-     *   or an object with properties corresponding to each column name.
-     */
-    public function fetchAll(
-        $fetchMode = null,
-        $fetchArgument = null,
-        $ctorArgs = []
-    ) {
-        if ($fetchMode !== null) {
-            $this->setFetchMode($fetchMode, $fetchArgument, $ctorArgs);
-        }
-
-        $results = [];
-        while ($row = $this->fetch()) {
-            $results[] = $row;
-        }
-
-        return $results;
-    }
-
-    /**
-     * Fetches the next row and returns it as an object
-     *
-     * @param string $className
-     * @param array $ctorArgs
-     * @return mixed
-     */
-    public function fetchObject($className = null, $ctorArgs = [])
-    {
-        $this->setFetchMode(PDO::FETCH_CLASS, $className, $ctorArgs);
-
-        return $this->fetch();
     }
 
     /**
@@ -642,45 +548,49 @@ class Oci8Statement extends PDOStatement
     }
 
     /**
-     * Set the default fetch mode for this statement
-     *
-     * @param int|null $fetchMode The fetch mode must be one of the
-     *   PDO::FETCH_* constants.
-     * @param mixed|null $modeArg Column number, class name or object.
-     * @param array|null $ctorArgs Constructor arguments.
-     * @throws Oci8Exception
-     * @return bool TRUE on success or FALSE on failure.
+     * @param integer $mode
+     * @param bool $keyToLowercase
+     * @return array|bool
      */
-    public function setFetchMode($fetchMode, $modeArg = null, array $ctorArgs = [])
+    private function fetchArray($mode, $keyToLowercase)
     {
-        $this->fetchMode = $fetchMode;
-        $this->fetchClassName = '\stdClass';
-        $this->fetchCtorargs = [];
-        $this->_fetchColno = 0;
-        $this->fetchIntoObject = null;
-
-        // See which fetch mode we have
-        switch ($fetchMode) {
-            case PDO::FETCH_CLASS:
-            case PDO::FETCH_CLASS | PDO::FETCH_PROPS_LATE:
-                if ($modeArg) {
-                    $this->fetchClassName = $modeArg;
-                }
-                $this->fetchCtorargs = $ctorArgs;
-                break;
-            case PDO::FETCH_INTO:
-                if (!is_object($modeArg)) {
-                    throw new Oci8Exception(
-                        '$modeArg must be instance of an object');
-                }
-                $this->fetchIntoObject = $modeArg;
-                break;
-            case PDO::FETCH_COLUMN:
-                $this->_fetchColno = (int)$modeArg;
-                break;
+        $rs = oci_fetch_array($this->sth, $mode + ($this->returnLobs ? OCI_RETURN_LOBS : 0));
+        if ($rs === false) {
+            return false;
+        }
+        if ($keyToLowercase) {
+            $rs = array_change_key_case($rs);
         }
 
-        return true;
+        return $rs;
+    }
+
+    /**
+     * @param $object
+     * @param array $fields
+     */
+    private function populateObject($object, array $fields)
+    {
+        $nullToString = ($this->getAttribute(PDO::ATTR_ORACLE_NULLS) === PDO::NULL_TO_STRING);
+        $nullEmptyString = ($this->getAttribute(PDO::ATTR_ORACLE_NULLS) === PDO::NULL_EMPTY_STRING);
+
+        // Format recordsets values depending on options
+        foreach ($fields as $field => $value) {
+            // convert null to empty string
+            if ($nullToString && null === $value) {
+                $value = '';
+            }
+
+            // convert empty string to null
+            if ($nullEmptyString && '' === $value) {
+                $value = null;
+            }
+
+            $object->$field = $value;
+        }
+
+        return $object;
+
     }
 
     /**
@@ -719,4 +629,26 @@ class Oci8Statement extends PDOStatement
         throw new Oci8Exception("debugDumpParams has not been implemented");
     }
 
+    /**
+     * Binds a column to a PHP variable
+     *
+     * @param mixed $column Number of the column (1-indexed) or name of the
+     *   column in the result set. If using the column name, be aware that the
+     *   name should match the case of the column, as returned by the driver.
+     * @param mixed $variable The PHP to which the column should be bound.
+     * @param int $dataType Data type of the parameter, specified by the
+     *   PDO::PARAM_* constants.
+     * @param int $maxLength A hint for pre-allocation.
+     * @param array $options [optional] Optional parameter(s) for the driver.
+     * @throws Oci8Exception
+     * @return bool TRUE on success or FALSE on failure.
+     * @todo Implement this functionality by creating a table map of the
+     *       variables passed in here, and, when iterating over the values
+     *       of the query or fetching rows, assign data from each column
+     *       to their respective variable in the map.
+     */
+    public function bindColumn($column, &$variable, $dataType = null, $maxLength = -1, $options = null)
+    {
+        throw new Oci8Exception("bindColumn has not been implemented");
+    }
 }
