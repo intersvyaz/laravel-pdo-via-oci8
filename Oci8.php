@@ -48,7 +48,7 @@ class Oci8 extends PDO
         $dbName = $this->parseDsn($dsn, 'dbname');
         $charset = $this->parseDsn($dsn, 'charset', 'AL32UTF8');
 
-        $this->connect($username, $password, $dbName, $charset, $options);
+        $this->connect($username, $password, $dbName, $charset, $options ?: []);
 
         // Save the options
         $this->options = $options;
