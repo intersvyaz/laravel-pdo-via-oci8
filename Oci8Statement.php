@@ -248,11 +248,7 @@ class Oci8Statement extends PDOStatement
             /**
              * @todo KLUDGE No read column with type ROWID
              */
-            if (oci_field_type($this->sth, (int)$colNumber) === 'ROWID') {
-                return null;
-            }
-
-            return $rs[(int)$colNumber];
+            return $this->returnLobs && is_a($rs[(int)$colNumber], 'OCI-Lob') ? null : $rs[(int)$colNumber];
         }
 
         return false;
