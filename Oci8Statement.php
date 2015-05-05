@@ -21,7 +21,7 @@ class Oci8Statement extends PDOStatement
     /**
      * @var \Intersvyaz\Pdo\Oci8 PDO Oci8 driver
      */
-    private $pdoOci8;
+    private $connection;
     /**
      * @var boolean flag to convert LOB to string or not
      */
@@ -67,11 +67,11 @@ class Oci8Statement extends PDOStatement
      * Constructor
      *
      * @param resource $sth Statement handle created with oci_parse()
-     * @param Oci8 $pdoOci8 The Pdo_Oci8 object for this statement
+     * @param Oci8 $connection The Pdo_Oci8 object for this statement
      * @param array $options Options for the statement handle
      * @throws Oci8Exception
      */
-    public function __construct($sth, Oci8 $pdoOci8, array $options = [])
+    public function __construct($sth, Oci8 $connection, array $options = [])
     {
 
         if (strtolower(get_resource_type($sth)) !== 'oci8 statement') {
@@ -81,7 +81,7 @@ class Oci8Statement extends PDOStatement
         }
 
         $this->sth = $sth;
-        $this->pdoOci8 = $pdoOci8;
+        $this->connection = $connection;
         $this->options = $options;
     }
 
@@ -96,7 +96,7 @@ class Oci8Statement extends PDOStatement
     public function execute($inputParams = null)
     {
         $mode = OCI_COMMIT_ON_SUCCESS;
-        if ($this->pdoOci8->inTransaction() || count($this->saveLobs) > 0 || count($this->writeLobs) > 0) {
+        if ($this->connection->inTransaction() || count($this->saveLobs) > 0 || count($this->writeLobs) > 0) {
             $mode = OCI_DEFAULT;
         }
 
@@ -127,8 +127,8 @@ class Oci8Statement extends PDOStatement
             throw new Oci8Exception($e['message'], $e['code']);
         }
 
-        if (!$this->pdoOci8->inTransaction() && (count($this->saveLobs) > 0 || count($this->writeLobs) > 0)) {
-            return $this->pdoOci8->commit();
+        if (!$this->connection->inTransaction() && (count($this->saveLobs) > 0 || count($this->writeLobs) > 0)) {
+            return $this->connection->commit();
         }
 
         return $result;
@@ -245,6 +245,13 @@ class Oci8Statement extends PDOStatement
     {
         $rs = oci_fetch_array($this->sth, OCI_NUM + OCI_RETURN_NULLS + ($this->returnLobs ? OCI_RETURN_LOBS : 0));
         if (is_array($rs) && array_key_exists((int)$colNumber, $rs)) {
+            /**
+             * @todo KLUDGE No read column with type ROWID
+             */
+            if (oci_field_type($this->sth, (int)$colNumber) === 'ROWID') {
+                return null;
+            }
+
             return $rs[(int)$colNumber];
         }
 
@@ -267,7 +274,7 @@ class Oci8Statement extends PDOStatement
     public function fetchAll($fetchMode = null, $fetchArgument = null, $ctorArgs = null)
     {
         if ($fetchMode !== null) {
-            $this->setFetchMode($fetchMode, $fetchArgument, $ctorArgs?:[]);
+            $this->setFetchMode($fetchMode, $fetchArgument, $ctorArgs ?: []);
         }
 
         $results = [];
@@ -287,7 +294,7 @@ class Oci8Statement extends PDOStatement
      */
     public function fetchObject($className = null, $ctorArgs = null)
     {
-        $className = $className?:$this->fetchClassName;
+        $className = $className ?: $this->fetchClassName;
 
         $toLowercase = ($this->getAttribute(PDO::ATTR_CASE) === PDO::CASE_LOWER);
         $rs = $this->fetchArray(OCI_ASSOC + OCI_RETURN_NULLS, $toLowercase);
@@ -357,11 +364,11 @@ class Oci8Statement extends PDOStatement
             case Oci8::PARAM_CLOB:
                 $oci_type = $dataType;
 
-                $this->lobsValue[$parameter] = $variable;
-                $variable = $this->pdoOci8->getNewDescriptor(OCI_D_LOB);
+                $this->lobsValue[$parameter] = &$variable;
+                $variable = $this->connection->getNewDescriptor(OCI_D_LOB);
 
                 if (in_array(Oci8::LOB_SQL, $options)) {
-                    $this->saveLobs[$parameter] = $variable;
+                    $this->saveLobs[$parameter] = &$variable;
                 } elseif (in_array(Oci8::LOB_PL_SQL, $options)) {
                     $this->writeLobs[$parameter] = ['type' => $oci_type, 'object' => $variable];
                 }
@@ -371,17 +378,17 @@ class Oci8Statement extends PDOStatement
                 $oci_type = OCI_B_CURSOR;
 
                 // Result sets require a cursor
-                $variable = $this->pdoOci8->getNewCursor();
+                $variable = $this->connection->getNewCursor();
                 break;
 
             case SQLT_NTY:
                 $oci_type = SQLT_NTY;
 
-                $schema = isset($options['schema']) ? $options['schema'] : '';
-                $type_name = isset($options['type_name']) ? $options['type_name'] : '';
+                $schema = array_key_exists('schema', $options) ? $options['schema'] : '';
+                $type_name = array_key_exists('type_name', $options) ? $options['type_name'] : '';
 
                 // set params required to use custom type.
-                $variable = $this->pdoOci8->getNewCollection($type_name, $schema);
+                $variable = $this->connection->getNewCollection($type_name, $schema);
                 break;
 
             default:
@@ -490,7 +497,7 @@ class Oci8Statement extends PDOStatement
      */
     public function getAttribute($attribute)
     {
-        if (isset($this->options[$attribute])) {
+        if (array_key_exists($attribute, $this->options)) {
             return $this->options[$attribute];
         }
 
@@ -548,6 +555,7 @@ class Oci8Statement extends PDOStatement
     }
 
     /**
+     * Fetch row from db
      * @param integer $mode
      * @param bool $keyToLowercase
      * @return array|bool
@@ -560,6 +568,15 @@ class Oci8Statement extends PDOStatement
         }
         if ($keyToLowercase) {
             $rs = array_change_key_case($rs);
+        }
+
+        /**
+         * @todo KLUDGE No read column with type ROWID
+         */
+        foreach ($rs as $name => $value) {
+            if (oci_field_type($this->sth, $name) === 'ROWID') {
+                $rs[$name] = null;
+            }
         }
 
         return $rs;

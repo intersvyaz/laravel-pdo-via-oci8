@@ -67,17 +67,15 @@ class Oci8 extends PDO
      */
     public function prepare($statement, $options = null)
     {
-        // Get instance options
-        if ($options == null) {
-            $options = $this->options;
-        }
-
-        // Prepare the statement
         $sth = @oci_parse($this->dbh, $statement);
 
         if (!$sth) {
             $e = oci_error($this->dbh);
             throw new Oci8Exception($e['message']);
+        }
+
+        if ($options === null) {
+            $options = $this->options;
         }
 
         if (!is_array($options)) {
@@ -102,17 +100,6 @@ class Oci8 extends PDO
         $this->inTransaction = true;
 
         return true;
-    }
-
-    /**
-     * Returns true if the current process is in a transaction
-     *
-     * @deprecated Use inTransaction() instead
-     * @return bool
-     */
-    public function isTransaction()
-    {
-        return $this->inTransaction();
     }
 
     /**
@@ -393,7 +380,7 @@ class Oci8 extends PDO
      * @param mixed $default
      * @return string|null
      */
-    protected function parseDsn($dsn, $param, $default = null)
+    private function parseDsn($dsn, $param, $default = null)
     {
         if (preg_match('/' . $param . '=(?<param>[^;]+)/', $dsn, $mathes)) {
             return $mathes['param'];
