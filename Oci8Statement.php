@@ -288,7 +288,7 @@ class Oci8Statement extends PDOStatement
      * @param array $ctorArgs
      * @return mixed
      */
-    public function fetchObject($className = null, $ctorArgs = null)
+    public function fetchObject($className = "stdClass", $ctorArgs = null)
     {
         $className = $className ?: $this->fetchClassName;
 
@@ -301,7 +301,7 @@ class Oci8Statement extends PDOStatement
             $object = new $className();
         }
 
-        return $this->populateObject($object, $rs);
+        return $rs ? $this->populateObject($object, $rs) : false;
     }
 
     /**
