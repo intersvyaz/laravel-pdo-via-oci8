@@ -96,7 +96,15 @@ class Oci8Statement extends PDOStatement
     public function execute($inputParams = null)
     {
         $mode = OCI_COMMIT_ON_SUCCESS;
-        if ($this->connection->inTransaction() || count($this->saveLobs) > 0 || count($this->writeLobs) > 0) {
+
+        $lobTransaction = false;
+        // Begin transaction, if lobs need save, but transaction was not started before.
+        if ((count($this->saveLobs) > 0 || count($this->writeLobs) > 0) && !$this->connection->inTransaction()) {
+            $this->connection->beginTransaction();
+            $lobTransaction = true;
+        }
+
+        if ($this->connection->inTransaction()) {
             $mode = OCI_DEFAULT;
         }
 
@@ -127,7 +135,7 @@ class Oci8Statement extends PDOStatement
             throw new Oci8Exception($e['message'], $e['code']);
         }
 
-        if (!$this->connection->inTransaction() && (count($this->saveLobs) > 0 || count($this->writeLobs) > 0)) {
+        if ($lobTransaction) {
             return $this->connection->commit();
         }
 
