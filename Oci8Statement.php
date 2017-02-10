@@ -368,7 +368,7 @@ class Oci8Statement extends PDOStatement
             case Oci8::PARAM_CLOB:
                 $oci_type = $dataType;
 
-                $this->lobsValue[$parameter] = &$variable;
+                $this->lobsValue[$parameter] = $variable;
                 $variable = $this->connection->getNewDescriptor(OCI_D_LOB);
 
                 if (in_array(Oci8::LOB_SQL, $options)) {
