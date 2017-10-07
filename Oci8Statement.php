@@ -578,7 +578,9 @@ class Oci8Statement extends PDOStatement
          * @todo KLUDGE No read column with type ROWID
          */
         foreach ($rs as $name => $value) {
-            if (oci_field_type($this->sth, $name) === 'ROWID') {
+            $ociFieldIndex = is_int($name) ? $name + 1 : $name;
+            
+            if (oci_field_type($this->sth, $ociFieldIndex) === 'ROWID') {
                 $rs[$name] = null;
             }
         }
